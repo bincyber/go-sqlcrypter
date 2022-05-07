@@ -1,0 +1,26 @@
+---
+version: "3.8"
+services:
+  local-kms:
+    image: docker.io/nsmithuk/local-kms:3.11.2
+    container_name: local-kms
+    restart: always
+    environment:
+      - PORT=9090
+      - KMS_SEED_PATH=/seed.yaml
+    ports:
+      - 9090:9090
+    volumes:
+      - ./seed.yaml:/seed.yaml:Z
+
+  vault:
+    image: docker.io/vault:1.10.3
+    container_name: vault
+    restart: always
+    environment:
+      VAULT_ADDR: "http://0.0.0.0:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: "vaultroottoken"
+    ports:
+      - 8200:8200
+    cap_add:
+      - IPC_LOCK

@@ -1,0 +1,42 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+  - deadcode
+  - errcheck
+  - govet
+  - ineffassign
+  - unused
+  - bodyclose
+  - gocritic
+  - misspell
+  - unconvert
+  - staticcheck
+  - varcheck
+  - gosimple
+  - stylecheck
+  - goimports
+  - depguard
+
+output:
+  sort-results: true
+
+linters-settings:
+  misspell:
+    locale: US
+  goimports:
+    local-prefixes: github.com/bincyber/go-sqlcrypter
+  errcheck:
+    exclude-functions:
+      - (io.Writer).Write
+
+issues:
+  exclude:
+  - ifElseChain
+  exclude-rules:
+  - path: _test\.go
+    linters:
+    - bodyclose
+    - errcheck

@@ -1,0 +1,12 @@
+---
+Keys:
+  Symmetric:
+    Aes:
+      - Metadata:
+          KeyId: b8fac04c-ed81-4283-8857-7b9fce25bc3d
+        BackingKeys:
+          - 7e4ff96aa50a6990f430712bb6d3af9381dc7e11e044cf2118083449cc29cbf8
+
+Aliases:
+  - AliasName: alias/sqlcrypter
+    TargetKeyId: b8fac04c-ed81-4283-8857-7b9fce25bc3d
