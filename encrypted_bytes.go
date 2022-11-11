@@ -104,20 +104,21 @@ func (e EncryptedBytes) Value() (driver.Value, error) {
 
 // MarshalJSON implements json.Marshaler interface
 func (e EncryptedBytes) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
+	v, err := e.Value()
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(v)
 }
 
 // UnmarshalJSON implements json.Unmarshaler interface
 func (e *EncryptedBytes) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		return nil
-	}
+	var b []byte
 
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
+	if err := json.Unmarshal(data, &b); err != nil {
 		return err
 	}
 
-	*e = []byte(s)
-	return nil
+	return e.Scan(b)
 }
