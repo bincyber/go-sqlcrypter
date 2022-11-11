@@ -1,6 +1,7 @@
 package sqlcrypter
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -70,16 +71,29 @@ func Test_EncryptedBytes_Value(t *testing.T) {
 }
 
 func Test_EncryptedBytes_MarshalJSON(t *testing.T) {
-	s := "Hello World"
-	e := NewEncryptedBytes(s)
-	b, err := e.MarshalJSON()
-	assert.Nil(t, err)
-	assert.Equal(t, "\"Hello World\"", string(b))
+	Init(&base64Crypter{})
+
+	m := map[string]EncryptedBytes{
+		"v": NewEncryptedBytes("Hello World"),
+	}
+
+	b, err := json.Marshal(m)
+	assert.NoError(t, err)
+	assert.Equal(t, `{"v":"U0dWc2JHOGdWMjl5YkdRPQ=="}`, string(b))
 }
 
 func Test_EncryptedBytes_UnmarshalJSON(t *testing.T) {
-	e := &EncryptedBytes{}
-	err := e.UnmarshalJSON([]byte("\"Hello World\""))
-	assert.Nil(t, err)
-	assert.Equal(t, "Hello World", e.String())
+	Init(&base64Crypter{})
+
+	data := []byte(`{"secret":"U0dWc2JHOGdWMjl5YkdRPQ=="}`)
+
+	type Example struct {
+		Secret EncryptedBytes
+	}
+
+	var e Example
+
+	err := json.Unmarshal(data, &e)
+	assert.NoError(t, err)
+	assert.Equal(t, "Hello World", e.Secret.String())
 }
