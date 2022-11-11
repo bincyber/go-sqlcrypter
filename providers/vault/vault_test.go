@@ -162,6 +162,6 @@ func (s *VaultCrypterTestSuite) Test_Decrypt_err() {
 	r.Contains(err.Error(), "failed to decrypt data using transit secrets engine")
 }
 
-func Test_KMSCrypterTestSuite(t *testing.T) {
+func Test_VaultCrypterTestSuite(t *testing.T) {
 	suite.Run(t, new(VaultCrypterTestSuite))
 }
