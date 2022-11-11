@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://mit-license.org/)
 [![GoDoc](https://godoc.org/github.com/bincyber/go-sqlcrypter?status.svg)](https://godoc.org/github.com/bincyber/go-sqlcrypter)
 [![Go Report Card](https://img.shields.io/badge/go%20report-A%2B-brightgreen)](https://goreportcard.com/report/github.com/bincyber/go-sqlcrypter)
-[![test](https://github.com/bincyber/go-sqlcrypter/actions/workflows/test.yml/badge.svg)](https://github.com/bincyber/go-sqlcrypter/actions/workflows/test.yml)
+[![test](https://github.com/bincyber/go-sqlcrypter/actions/workflows/go.yml/badge.svg)](https://github.com/bincyber/go-sqlcrypter/actions/workflows/go.yml)
 
 `go-sqlcrypter` is a Go package that enables sensitive data to be encrypted at rest within a relational database. A custom type _[EncryptedBytes](https://github.com/bincyber/go-sqlcrypter/blob/master/encrypted_bytes.go#L33)_ is provided which implements the `sql.Scanner` and `driver.Valuer` interfaces allowing data to be encrypted and decrypted when writing to and reading from a SQL database. [Column-level encryption](https://en.wikipedia.org/wiki/Column_level_encryption) provides an additional layer of security.
 
