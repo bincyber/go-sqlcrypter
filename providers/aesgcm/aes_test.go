@@ -22,7 +22,7 @@ func Test_New(t *testing.T) {
 		key, _ := sqlcrypter.GenerateBytes(32)
 
 		aesCrypter, err := New(key, nil)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.IsType(t, &AESCrypter{}, aesCrypter)
 	})
 
@@ -40,7 +40,7 @@ func Test_New(t *testing.T) {
 		previous, _ := sqlcrypter.GenerateBytes(32)
 
 		aesCrypter, err := New(current, previous)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.IsType(t, &AESCrypter{}, aesCrypter)
 	})
 }
@@ -56,7 +56,7 @@ func Test_AESCryptor_Encrypt(t *testing.T) {
 	a, _ := New(key, nil)
 
 	err := a.Encrypt(writer, reader)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.NotEqual(t, plaintext, writer.String())
 
 	t.Run("err", func(t *testing.T) {
@@ -64,7 +64,7 @@ func Test_AESCryptor_Encrypt(t *testing.T) {
 		previous, _ := sqlcrypter.GenerateBytes(32)
 
 		aesCrypter, err := New(current, previous)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.IsType(t, &AESCrypter{}, aesCrypter)
 	})
 }
@@ -108,7 +108,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		writer := new(bytes.Buffer)
 
 		err := a.Decrypt(writer, reader)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
 	})
 
@@ -127,7 +127,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		a, _ := New(key, previousKey)
 
 		err := a.Decrypt(writer, reader)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
 	})
 
@@ -146,7 +146,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		a, _ := New(key, previousKey)
 
 		err := a.Decrypt(writer, reader)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
 	})
 }

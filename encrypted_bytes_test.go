@@ -29,7 +29,7 @@ func Test_EncryptedBytes_Scan(t *testing.T) {
 		e := NewEncryptedBytes("")
 		var b []byte
 		err := e.Scan(b)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Nil(t, e)
 	})
 
@@ -43,7 +43,7 @@ func Test_EncryptedBytes_Scan(t *testing.T) {
 	t.Run("decrypt", func(t *testing.T) {
 		e := &EncryptedBytes{}
 		err := e.Scan([]byte("SGVsbG8gV29ybGQ="))
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Equal(t, "Hello World", e.String())
 	})
 }
@@ -55,14 +55,14 @@ func Test_EncryptedBytes_Value(t *testing.T) {
 		e := &EncryptedBytes{}
 		var b []byte
 		d, err := e.Value()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Equal(t, b, d)
 	})
 
 	t.Run("encrypt", func(t *testing.T) {
 		e := NewEncryptedBytes("Hello World")
 		d, err := e.Value()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		b, ok := d.([]byte)
 		assert.True(t, ok)
