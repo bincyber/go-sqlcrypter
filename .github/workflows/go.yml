@@ -1,27 +1,46 @@
 ---
-name: test
-on: [push]
+name: go
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
 
 jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+
+      - uses: actions/checkout@v3
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.50.1
+
   test:
     name: test
+    needs: lint
     runs-on: ubuntu-20.04
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v2.1.3
+        uses: actions/setup-go@v3
         with:
-          go-version: 1.17
+          go-version: 1.19
 
       - name: Checkout code
-        uses: actions/checkout@v3.0.2
-        with:
-          clean: false
+        uses: actions/checkout@v3
 
       - name: Bring up background services
         run: make dev/up
-
-      - name: Wait for services
-        run: sleep 5 && make dev/logs
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
@@ -37,7 +56,7 @@ jobs:
       - name: Setup gotestsum
         uses: autero1/action-gotestsum@v1.0.0
         with:
-          gotestsum_version: 1.7.0
+          gotestsum_version: 1.8.2
 
       - name: Run tests
         run: make go/testsum
