@@ -73,7 +73,7 @@ func Test_Encrypt(t *testing.T) {
 	writer := new(bytes.Buffer)
 
 	err := Encrypt(writer, reader)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, writer.String(), ciphertext)
 }
 
@@ -87,6 +87,6 @@ func Test_Decrypt(t *testing.T) {
 	writer := new(bytes.Buffer)
 
 	err := Decrypt(writer, reader)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, writer.String(), plaintext)
 }
