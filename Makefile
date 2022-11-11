@@ -3,7 +3,7 @@ go/install:
 	go get -v
 
 go/tidy:
-	go mod tidy
+	go mod tidy --compat=1.19
 
 go/test:
 	go test -v -coverprofile=.coverage.out --cover ./...
@@ -12,7 +12,7 @@ go/testsum:
 	gotestsum --format testname --no-color=false -- --cover ./...
 
 go/lint:
-	golangci-lint run
+	golangci-lint run --allow-parallel-runners
 
 go/coverage:
 	go tool cover -html=.coverage.out
