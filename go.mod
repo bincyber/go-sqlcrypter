@@ -11,7 +11,7 @@ require (
 	github.com/hashicorp/vault/api v1.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.1
-	gorm.io/gorm v1.23.6
+	gorm.io/gorm v1.24.6
 )
 
 require (
@@ -53,7 +53,7 @@ require (
 	github.com/hashicorp/vault/sdk v0.5.0 // indirect
 	github.com/hashicorp/yamux v0.0.0-20180604194846-3520598351bb // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.4 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-colorable v0.1.6 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
