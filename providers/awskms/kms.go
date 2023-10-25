@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -32,6 +33,9 @@ type KMSCrypter struct {
 
 	// encryptedKeyLength is the length of the DEK.
 	encryptedKeyLength uint8
+
+	// encryptedKeyEncryptionCount is the number of encryptions performed with the current key
+	encryptedKeyEncryptionCount atomic.Uint64
 
 	// cipherBlock is the 256-bit AES GCM block cipher.
 	aesgcm cipher.AEAD
@@ -105,10 +109,8 @@ func (k *KMSCrypter) Encrypt(w io.Writer, r io.Reader) error {
 		return errors.Wrap(err, "failed to read from io.Reader")
 	}
 
-	nonce, err := sqlcrypter.GenerateBytes(k.aesgcm.NonceSize())
-	if err != nil {
-		return errors.Wrap(err, "failed to generate 12-byte random nonce")
-	}
+	nonce := make([]byte, 12)
+	binary.LittleEndian.PutUint64(nonce[4:], k.encryptedKeyEncryptionCount.Add(1))
 
 	ciphertext := k.aesgcm.Seal(nil, nonce, src.Bytes(), nil)
 
