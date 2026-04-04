@@ -2,9 +2,11 @@ package vault
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"io"
 	"path/filepath"
+	"time"
 
 	vaultapi "github.com/hashicorp/vault/api"
 	"github.com/pkg/errors"
@@ -66,23 +68,26 @@ func (v *VaultCrypter) Encrypt(w io.Writer, r io.Reader) error {
 	}
 
 	// Plaintext must be base64-encoded
-	p := map[string]interface{}{
+	p := map[string]any{
 		"plaintext": base64.StdEncoding.EncodeToString(src.Bytes()),
 	}
 
-	resp, err := v.client.Logical().Write(v.getEncryptEndpoint(), p)
+	vCtx, vCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer vCancel()
+
+	resp, err := v.client.Logical().WriteWithContext(vCtx, v.getEncryptEndpoint(), p)
 	if err != nil {
 		return errors.Wrapf(err, "failed to encrypt data using transit secrets engine: mount %q and key %q", v.mount, v.key)
 	}
 
 	data, ok := resp.Data["ciphertext"]
 	if !ok {
-		return errors.Wrap(err, "failed to extract ciphertext from Vault's response")
+		return errors.New("failed to extract ciphertext from Vault's response")
 	}
 
 	ciphertext, ok := data.(string)
 	if !ok {
-		return errors.Wrap(err, "failed to convert ciphertext to string")
+		return errors.Errorf("failed to convert ciphertext to string: got %T", data)
 	}
 
 	w.Write([]byte(ciphertext))
@@ -96,28 +101,31 @@ func (v *VaultCrypter) Encrypt(w io.Writer, r io.Reader) error {
 // See: https://www.vaultproject.io/api-docs/secret/transit#decrypt-data
 func (v *VaultCrypter) Decrypt(w io.Writer, r io.Reader) error {
 	src := new(bytes.Buffer)
-	_, err := src.ReadFrom(r)
-	if err != nil {
+
+	if _, err := src.ReadFrom(r); err != nil {
 		return errors.Wrap(err, "failed to read from io.Reader")
 	}
 
-	p := map[string]interface{}{
+	p := map[string]any{
 		"ciphertext": src.String(),
 	}
 
-	resp, err := v.client.Logical().Write(v.getDecryptEndpoint(), p)
+	vCtx, vCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer vCancel()
+
+	resp, err := v.client.Logical().WriteWithContext(vCtx, v.getDecryptEndpoint(), p)
 	if err != nil {
 		return errors.Wrapf(err, "failed to decrypt data using transit secrets engine: mount %q and key %q", v.mount, v.key)
 	}
 
 	data, ok := resp.Data["plaintext"]
 	if !ok {
-		return errors.Wrap(err, "failed to extract plaintext from Vault's response")
+		return errors.New("failed to extract plaintext from Vault's response")
 	}
 
 	b64Plaintext, ok := data.(string)
 	if !ok {
-		return errors.Wrap(err, "failed to convert plaintext to string")
+		return errors.Errorf("failed to convert plaintext to string: got %T", data)
 	}
 
 	// Plaintext is base64 encoded and must be decoded
