@@ -78,6 +78,22 @@ func Test_Encrypt(t *testing.T) {
 	assert.Equal(t, ciphertext, writer.String())
 }
 
+func Test_Encrypt_NotInitialized(t *testing.T) {
+	prev := crypter
+	t.Cleanup(func() {
+		crypter = prev
+	})
+
+	crypter = nil
+
+	reader := bytes.NewBufferString("Hello World")
+	writer := new(bytes.Buffer)
+
+	err := Encrypt(writer, reader)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrCrypterNotInitialized)
+}
+
 func Test_Decrypt(t *testing.T) {
 	crypter = &base64Crypter{}
 
@@ -90,4 +106,20 @@ func Test_Decrypt(t *testing.T) {
 	err := Decrypt(writer, reader)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, writer.String())
+}
+
+func Test_Decrypt_NotInitialized(t *testing.T) {
+	prev := crypter
+	t.Cleanup(func() {
+		crypter = prev
+	})
+
+	crypter = nil
+
+	reader := bytes.NewBufferString("SGVsbG8gV29ybGQ=")
+	writer := new(bytes.Buffer)
+
+	err := Decrypt(writer, reader)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrCrypterNotInitialized)
 }
