@@ -18,12 +18,15 @@ Refer to each provider for documentation and examples.
 ### Install
 
 ```
-go get -u github.com/bincyber/go-sqlcrypter
+go get -u github.com/bincyber/go-sqlcrypter@v0.2.0
 ```
 
 ### Usage
 
 Configure the encryption provider of your choice:
+
+> [!WARNING]
+> Never hardcode encryption keys in source code or config files committed to git.
 
 ```go
 key := []byte("abcdef01234567899876543210fedcba")

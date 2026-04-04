@@ -12,7 +12,7 @@ import (
 )
 
 // AESCrypter is an implementation of the Crypterer interface using
-// 256-bit AES in Galeious Counter Mode with support for key rotation.
+// 256-bit AES in Galois Counter Mode with support for key rotation.
 type AESCrypter struct {
 	// current is AES GCM block cipher used to encrypt any new data
 	// using the current data encryption key.
