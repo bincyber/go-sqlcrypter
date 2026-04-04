@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // base64Crypter exists only for test purposes
@@ -73,8 +74,8 @@ func Test_Encrypt(t *testing.T) {
 	writer := new(bytes.Buffer)
 
 	err := Encrypt(writer, reader)
-	assert.NoError(t, err)
-	assert.Equal(t, writer.String(), ciphertext)
+	require.NoError(t, err)
+	assert.Equal(t, ciphertext, writer.String())
 }
 
 func Test_Decrypt(t *testing.T) {
@@ -87,6 +88,6 @@ func Test_Decrypt(t *testing.T) {
 	writer := new(bytes.Buffer)
 
 	err := Decrypt(writer, reader)
-	assert.NoError(t, err)
-	assert.Equal(t, writer.String(), plaintext)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, writer.String())
 }

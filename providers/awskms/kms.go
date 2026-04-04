@@ -6,7 +6,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"time"
 
@@ -46,11 +45,11 @@ type KMSCrypter struct {
 // ciphertext. 256-bit AES GCM is used to perform the encryption.
 func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Crypterer, error) {
 	if client == nil {
-		return nil, fmt.Errorf("kms.Client cannot be nil")
+		return nil, errors.New("kms.Client cannot be nil")
 	}
 
 	if keyID == "" {
-		return nil, fmt.Errorf("keyID cannot be nil")
+		return nil, errors.New("keyID cannot be empty")
 	}
 
 	// Generate a symmetric data encryption key to encrypt new data
@@ -80,9 +79,13 @@ func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Cryp
 		MaxCost:     10000000, // 10MB
 		BufferItems: 64,
 	})
-
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to configure in-memory cache")
+	}
+
+	dekLen := len(resp.CiphertextBlob)
+	if dekLen > 255 {
+		return nil, errors.New("encrypted DEK length exceeds uint8 limit")
 	}
 
 	k := &KMSCrypter{
@@ -90,7 +93,7 @@ func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Cryp
 		keyID:              keyID,
 		aesgcm:             aesgcm,
 		encryptedKey:       resp.CiphertextBlob,
-		encryptedKeyLength: uint8(len(resp.CiphertextBlob)),
+		encryptedKeyLength: uint8(dekLen),
 		cache:              cache,
 	}
 
@@ -164,7 +167,7 @@ func (k *KMSCrypter) Decrypt(w io.Writer, r io.Reader) error {
 	if v, ok := k.cache.Get(encryptedKey); ok {
 		key, ok := v.([]byte)
 		if !ok {
-			return fmt.Errorf("failed to type cast cache value as []byte")
+			return errors.New("failed to type cast cache value as []byte")
 		}
 
 		cipherBlock, err := aes.NewCipher(key)

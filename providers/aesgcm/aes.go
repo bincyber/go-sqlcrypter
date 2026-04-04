@@ -18,7 +18,7 @@ type AESCrypter struct {
 	// using the current data encryption key.
 	current cipher.AEAD
 
-	// previous is is AES GCM block cipher used to decrypt old data
+	// previous is AES GCM block cipher used to decrypt old data
 	// using the previous data encryption key.
 	previous cipher.AEAD
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/bincyber/go-sqlcrypter"
 )
@@ -14,7 +15,7 @@ func Test_New(t *testing.T) {
 		key, _ := sqlcrypter.GenerateBytes(16)
 
 		_, err := New(key, nil)
-		assert.NotNil(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "DEK is invalid")
 	})
 
@@ -22,7 +23,7 @@ func Test_New(t *testing.T) {
 		key, _ := sqlcrypter.GenerateBytes(32)
 
 		aesCrypter, err := New(key, nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.IsType(t, &AESCrypter{}, aesCrypter)
 	})
 
@@ -31,7 +32,7 @@ func Test_New(t *testing.T) {
 		previous := []byte("2819b0fcd8bfa185bd724fb5")
 
 		_, err := New(current, previous)
-		assert.NotNil(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "previous DEK is invalid")
 	})
 
@@ -40,7 +41,7 @@ func Test_New(t *testing.T) {
 		previous, _ := sqlcrypter.GenerateBytes(32)
 
 		aesCrypter, err := New(current, previous)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.IsType(t, &AESCrypter{}, aesCrypter)
 	})
 }
@@ -56,7 +57,7 @@ func Test_AESCryptor_Encrypt(t *testing.T) {
 	a, _ := New(key, nil)
 
 	err := a.Encrypt(writer, reader)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEqual(t, plaintext, writer.String())
 
 	t.Run("err", func(t *testing.T) {
@@ -64,7 +65,7 @@ func Test_AESCryptor_Encrypt(t *testing.T) {
 		previous, _ := sqlcrypter.GenerateBytes(32)
 
 		aesCrypter, err := New(current, previous)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.IsType(t, &AESCrypter{}, aesCrypter)
 	})
 }
@@ -84,7 +85,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		writer := new(bytes.Buffer)
 
 		err := a.Decrypt(writer, reader)
-		assert.NotNil(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decrypt ciphertext using current DEK")
 	})
 
@@ -97,7 +98,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		writer := new(bytes.Buffer)
 
 		err := a.Decrypt(writer, reader)
-		assert.NotNil(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decrypt ciphertext using current and previous DEK")
 	})
 
@@ -108,7 +109,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		writer := new(bytes.Buffer)
 
 		err := a.Decrypt(writer, reader)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
 	})
 
@@ -127,7 +128,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		a, _ := New(key, previousKey)
 
 		err := a.Decrypt(writer, reader)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
 	})
 
@@ -146,7 +147,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		a, _ := New(key, previousKey)
 
 		err := a.Decrypt(writer, reader)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
 	})
 }

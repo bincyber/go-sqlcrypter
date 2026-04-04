@@ -3,7 +3,6 @@ package vault
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"path/filepath"
 
@@ -27,15 +26,15 @@ type VaultCrypter struct {
 // Convergent Encryption is not supported.
 func New(client *vaultapi.Client, mount, key string) (sqlcrypter.Crypterer, error) {
 	if client == nil {
-		return nil, fmt.Errorf("failed to create VaultCrypter. Error: vaultapi.Client cannot be nil")
+		return nil, errors.New("failed to create VaultCrypter. Error: vaultapi.Client cannot be nil")
 	}
 
 	if mount == "" {
-		return nil, fmt.Errorf("failed to create VaultCrypter. Error: mount cannot be nil")
+		return nil, errors.New("failed to create VaultCrypter. Error: mount cannot be nil")
 	}
 
 	if key == "" {
-		return nil, fmt.Errorf("failed to create VaultCrypter. Error: key cannot be nil")
+		return nil, errors.New("failed to create VaultCrypter. Error: key cannot be nil")
 	}
 
 	v := &VaultCrypter{

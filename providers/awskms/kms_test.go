@@ -26,22 +26,14 @@ const (
 //
 // See: https://aws.github.io/aws-sdk-go-v2/docs/configuring-sdk/endpoints/
 func getLocalKMSClient() *kms.Client {
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			PartitionID:   "aws",
-			URL:           "http://localhost:9090",
-			SigningRegion: "us-west-2",
-		}, nil
-	})
-
 	cfg, _ := config.LoadDefaultConfig(context.TODO(),
-		config.WithEndpointResolverWithOptions(customResolver),
 		config.WithRegion("us-west-2"),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("AKID", "SECRET_KEY", "TOKEN")),
 	)
 
-	client := kms.NewFromConfig(cfg)
-	return client
+	return kms.NewFromConfig(cfg, func(o *kms.Options) {
+		o.BaseEndpoint = aws.String("http://localhost:9090")
+	})
 }
 
 type KMSCrypterTestSuite struct {
@@ -62,7 +54,7 @@ func (s *KMSCrypterTestSuite) Test_New() {
 
 	kmsCrypter, err := New(context.Background(), s.client, KmsKeyAlias)
 
-	r.Nil(err)
+	r.NoError(err)
 	r.IsType(&KMSCrypter{}, kmsCrypter)
 }
 
@@ -70,26 +62,26 @@ func (s *KMSCrypterTestSuite) Test_New_nil_kms_client() {
 	r := s.Require()
 
 	_, err := New(context.Background(), nil, KmsKeyID)
-	r.NotNil(err)
+	r.Error(err)
 }
 
 func (s *KMSCrypterTestSuite) Test_New_nil_keyID() {
 	r := s.Require()
 
 	_, err := New(context.Background(), s.client, "")
-	r.NotNil(err)
+	r.Error(err)
 }
 
 func (s *KMSCrypterTestSuite) Test_New_GenerateDataKey_error() {
 	r := s.Require()
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
-	r.Nil(err)
+	r.NoError(err)
 
 	client := kms.NewFromConfig(cfg)
 
 	_, err = New(context.Background(), client, "nonexistant-kms-key")
-	r.NotNil(err)
+	r.Error(err)
 	r.Contains(err.Error(), "failed to retrieve data key")
 }
 
@@ -102,13 +94,13 @@ func (s *KMSCrypterTestSuite) Test_Encrypt() {
 	writer := new(bytes.Buffer)
 
 	err := s.kmsCrypter.Encrypt(writer, reader)
-	r.Nil(err)
+	r.NoError(err)
 	r.NotEqual(plaintext, writer.String())
 
 	// Verify the writer's contents is structured as expected
 	var keyLength uint8
 	err = binary.Read(writer, binary.LittleEndian, &keyLength)
-	r.Nil(err)
+	r.NoError(err)
 
 	key := writer.Next(int(keyLength))
 	nonce := writer.Next(12)
@@ -128,12 +120,12 @@ func (s *KMSCrypterTestSuite) Test_Decrypt_current_DEK() {
 	writer := new(bytes.Buffer)
 
 	err := s.kmsCrypter.Encrypt(writer, reader)
-	r.Nil(err)
+	r.NoError(err)
 
 	reader = new(bytes.Buffer)
 
 	err = s.kmsCrypter.Decrypt(reader, writer)
-	r.Nil(err)
+	r.NoError(err)
 	r.Equal(plaintext, reader.String())
 }
 
@@ -148,7 +140,7 @@ func (s *KMSCrypterTestSuite) Test_Decrypt_previous_DEK() {
 	writer := new(bytes.Buffer)
 
 	err := s.kmsCrypter.Decrypt(writer, reader)
-	r.Nil(err)
+	r.NoError(err)
 	r.Equal(plaintext, writer.String())
 }
 
@@ -185,7 +177,7 @@ func (s *KMSCrypterTestSuite) Test_Decrypt_previous_DEK_cached() {
 	writer := new(bytes.Buffer)
 
 	err := kmsCrypter.Decrypt(writer, reader)
-	r.Nil(err)
+	r.NoError(err)
 	r.Equal(plaintext, writer.String())
 }
 

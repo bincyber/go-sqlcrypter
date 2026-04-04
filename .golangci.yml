@@ -1,42 +1,100 @@
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
+  default: none
   enable:
-  - deadcode
-  - errcheck
-  - govet
-  - ineffassign
-  - unused
-  - bodyclose
-  - gocritic
-  - misspell
-  - unconvert
-  - staticcheck
-  - varcheck
-  - gosimple
-  - stylecheck
-  - goimports
-  - depguard
-
-output:
-  sort-results: true
-
-linters-settings:
-  misspell:
-    locale: US
-  goimports:
-    local-prefixes: github.com/bincyber/go-sqlcrypter
-  errcheck:
-    exclude-functions:
-      - (io.Writer).Write
-
-issues:
-  exclude:
-  - ifElseChain
-  exclude-rules:
-  - path: _test\.go
-    linters:
+    - asciicheck
+    - bidichk
     - bodyclose
+    - contextcheck
+    - durationcheck
+    - dupword
     - errcheck
+    - errname
+    - errorlint
+    - gocritic
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - loggercheck
+    - makezero
+    - misspell
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - perfsprint
+    - predeclared
+    - promlinter
+    - reassign
+    - staticcheck
+    - testableexamples
+    - testifylint
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - (io.Writer).Write
+        - (net/http.ResponseWriter).Write
+    misspell:
+      locale: US
+    nestif:
+      min-complexity: 10
+    nolintlint:
+      require-specific: true
+      allow-unused: false
+    testifylint:
+      enable-all: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - bodyclose
+          - errcheck
+          - noctx
+        path: _test\.go
+      - path: (.+)\.go$
+        text: ifElseChain
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/bincyber/go-sqlcrypter)
+      no-inline-comments: true
+      no-prefix-comments: true
+      custom-order: true
+  exclusions:
+    warn-unused: true
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
