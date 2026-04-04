@@ -2,7 +2,7 @@
 version: "3.8"
 services:
   local-kms:
-    image: docker.io/nsmithuk/local-kms:3.11.2
+    image: docker.io/nsmithuk/local-kms:3.11.7
     container_name: local-kms
     restart: always
     environment:
@@ -14,7 +14,7 @@ services:
       - ./seed.yaml:/seed.yaml:Z
 
   vault:
-    image: docker.io/vault:1.10.3
+    image: docker.io/hashicorp/vault:1.21
     container_name: vault
     restart: always
     environment:

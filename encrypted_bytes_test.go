@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_NewEncryptedBytes(t *testing.T) {
@@ -29,21 +30,21 @@ func Test_EncryptedBytes_Scan(t *testing.T) {
 		e := NewEncryptedBytes("")
 		var b []byte
 		err := e.Scan(b)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Nil(t, e)
 	})
 
 	t.Run("not bytes", func(t *testing.T) {
 		e := NewEncryptedBytes("")
 		err := e.Scan("string, not bytes")
-		assert.NotNil(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read value as bytes")
 	})
 
 	t.Run("decrypt", func(t *testing.T) {
 		e := &EncryptedBytes{}
 		err := e.Scan([]byte("SGVsbG8gV29ybGQ="))
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "Hello World", e.String())
 	})
 }
@@ -55,18 +56,18 @@ func Test_EncryptedBytes_Value(t *testing.T) {
 		e := &EncryptedBytes{}
 		var b []byte
 		d, err := e.Value()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, b, d)
 	})
 
 	t.Run("encrypt", func(t *testing.T) {
 		e := NewEncryptedBytes("Hello World")
 		d, err := e.Value()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		b, ok := d.([]byte)
 		assert.True(t, ok)
-		assert.Equal(t, string(b), "SGVsbG8gV29ybGQ=")
+		assert.Equal(t, "SGVsbG8gV29ybGQ=", string(b))
 	})
 }
 
@@ -78,8 +79,8 @@ func Test_EncryptedBytes_MarshalJSON(t *testing.T) {
 	}
 
 	b, err := json.Marshal(m)
-	assert.NoError(t, err)
-	assert.Equal(t, `{"v":"U0dWc2JHOGdWMjl5YkdRPQ=="}`, string(b))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"v":"U0dWc2JHOGdWMjl5YkdRPQ=="}`, string(b))
 }
 
 func Test_EncryptedBytes_UnmarshalJSON(t *testing.T) {
@@ -94,6 +95,6 @@ func Test_EncryptedBytes_UnmarshalJSON(t *testing.T) {
 	var e Example
 
 	err := json.Unmarshal(data, &e)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "Hello World", e.Secret.String())
 }

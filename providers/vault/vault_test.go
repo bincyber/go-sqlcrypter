@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	vaultapi "github.com/hashicorp/vault/api"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/bincyber/go-sqlcrypter"
@@ -38,7 +37,7 @@ func (s *VaultCrypterTestSuite) SetupTest() {
 	s.client = getVaultClient()
 
 	vaultCrypter, err := New(s.client, transitMount, transitKey)
-	assert.Nil(s.T(), err)
+	s.Require().NoError(err)
 	s.vaultCrypter = vaultCrypter
 }
 
@@ -48,7 +47,7 @@ func (s *VaultCrypterTestSuite) Test_New_nil_client() {
 	r := s.Require()
 
 	_, err := New(nil, transitMount, transitKey)
-	r.NotNil(err)
+	r.Error(err)
 	r.Contains(err.Error(), "vaultapi.Client cannot be nil")
 }
 
@@ -58,7 +57,7 @@ func (s *VaultCrypterTestSuite) Test_New_nil_mount() {
 	client := getVaultClient()
 
 	_, err := New(client, "", transitKey)
-	r.NotNil(err)
+	r.Error(err)
 	r.Contains(err.Error(), "mount cannot be nil")
 }
 
@@ -68,7 +67,7 @@ func (s *VaultCrypterTestSuite) Test_New_nil_key() {
 	client := getVaultClient()
 
 	_, err := New(client, transitMount, "")
-	r.NotNil(err)
+	r.Error(err)
 	r.Contains(err.Error(), "key cannot be nil")
 }
 
@@ -80,7 +79,7 @@ func (s *VaultCrypterTestSuite) Test_getEncryptEndpoint() {
 		key:   transitKey,
 	}
 
-	r.Equal(vaultCrypter.getEncryptEndpoint(), "transit/encrypt/go-sqlcrypter")
+	r.Equal("transit/encrypt/go-sqlcrypter", vaultCrypter.getEncryptEndpoint())
 }
 
 func (s *VaultCrypterTestSuite) Test_getDecryptEndpoint() {
@@ -91,7 +90,7 @@ func (s *VaultCrypterTestSuite) Test_getDecryptEndpoint() {
 		key:   transitKey,
 	}
 
-	r.Equal(vaultCrypter.getDecryptEndpoint(), "transit/decrypt/go-sqlcrypter")
+	r.Equal("transit/decrypt/go-sqlcrypter", vaultCrypter.getDecryptEndpoint())
 }
 
 func (s *VaultCrypterTestSuite) Test_Encrypt() {
@@ -103,7 +102,7 @@ func (s *VaultCrypterTestSuite) Test_Encrypt() {
 	writer := new(bytes.Buffer)
 
 	err := s.vaultCrypter.Encrypt(writer, reader)
-	r.Nil(err)
+	r.NoError(err)
 
 	r.Contains(writer.String(), "vault:v1")
 }
@@ -127,7 +126,7 @@ func (s *VaultCrypterTestSuite) Test_Encrypt_err() {
 	writer := new(bytes.Buffer)
 
 	err := vaultCrypter.Encrypt(writer, reader)
-	r.NotNil(err)
+	r.Error(err)
 	r.Contains(err.Error(), "failed to encrypt data using transit secrets engine")
 }
 
@@ -140,12 +139,12 @@ func (s *VaultCrypterTestSuite) Test_Decrypt() {
 	writer := new(bytes.Buffer)
 
 	err := s.vaultCrypter.Encrypt(writer, reader)
-	r.Nil(err)
+	r.NoError(err)
 
 	reader = new(bytes.Buffer)
 
 	err = s.vaultCrypter.Decrypt(reader, writer)
-	r.Nil(err)
+	r.NoError(err)
 	r.Contains(reader.String(), plaintext)
 }
 
@@ -158,7 +157,7 @@ func (s *VaultCrypterTestSuite) Test_Decrypt_err() {
 	writer := new(bytes.Buffer)
 
 	err := s.vaultCrypter.Decrypt(writer, reader)
-	r.NotNil(err)
+	r.Error(err)
 	r.Contains(err.Error(), "failed to decrypt data using transit secrets engine")
 }
 

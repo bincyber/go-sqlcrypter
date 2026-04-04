@@ -64,7 +64,7 @@ For a full example, see [example/main.go](https://github.com/bincyber/go-sqlcryp
 
 ### Development
 
-[docker-compose](https://docs.docker.com/compose/) is used to help with local development and testing. See [testing/docker-compose.yml](https://github.com/bincyber/go-sqlcrypter/blob/master/testing/docker-compose.yml)
+[Docker Compose](https://docs.docker.com/compose/) backs local services; `make dev/up` and related targets invoke it against [testing/docker-compose.yml](https://github.com/bincyber/go-sqlcrypter/blob/master/testing/docker-compose.yml).
 
 To bring up the development environment:
 

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"fmt"
+	"errors"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
@@ -36,7 +36,7 @@ func (e *EncryptedBytes) GormDataType() string {
 }
 
 func (e *EncryptedBytes) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	switch db.Dialector.Name() {
+	switch db.Name() {
 	case "mysql":
 		return "binary"
 	case "postgres":
@@ -62,7 +62,7 @@ func (e EncryptedBytes) Bytes() []byte {
 func (e *EncryptedBytes) Scan(value interface{}) error {
 	b, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("failed to read value as bytes")
+		return errors.New("failed to read value as bytes")
 	}
 
 	// Dont attempt to decrypt if value is nil
