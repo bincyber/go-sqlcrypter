@@ -7,7 +7,7 @@ go/install:
 	go get -v
 
 go/tidy:
-	go mod tidy --compat=1.25
+	go mod tidy --compat=1.26
 
 go/test:
 	go test -v -coverprofile=.coverage.out --cover ./...

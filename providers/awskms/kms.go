@@ -107,12 +107,17 @@ func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Cryp
 // Encrypt encrypts plaintext to ciphertext using the current DEK.
 // The encrypted DEK is stored alongside the ciphertext.
 func (k *KMSCrypter) Encrypt(w io.Writer, r io.Reader) error {
+	if k.aesgcm == nil {
+		return errors.New("AES-GCM was not initialized")
+	}
+
 	src := new(bytes.Buffer)
 	if _, err := src.ReadFrom(r); err != nil {
 		return errors.Wrap(err, "failed to read from io.Reader")
 	}
 
-	nonce := make([]byte, 12)
+	nonceSize := k.aesgcm.NonceSize() // 12 bytes
+	nonce := make([]byte, nonceSize)
 	binary.LittleEndian.PutUint64(nonce[4:], k.encryptedKeyEncryptionCount.Add(1))
 
 	ciphertext := k.aesgcm.Seal(nil, nonce, src.Bytes(), nil)
@@ -123,7 +128,7 @@ func (k *KMSCrypter) Encrypt(w io.Writer, r io.Reader) error {
 	}
 	w.Write(k.encryptedKey)
 
-	// Next 12 bytes will be the nonce, followed by the ciphertext.
+	// Next 12 bytes are the nonce, then the ciphertext (plaintext + AEAD overhead).
 	w.Write(nonce)
 	w.Write(ciphertext)
 
@@ -135,24 +140,45 @@ func (k *KMSCrypter) Encrypt(w io.Writer, r io.Reader) error {
 // the ciphertext. Otherwise, a request is made to KMS to decrypt the
 // encrypted key and then the DEK is used to decrypt the ciphertext.
 func (k *KMSCrypter) Decrypt(w io.Writer, r io.Reader) error {
+	if k.aesgcm == nil {
+		return errors.New("AES-GCM was not initialized")
+	}
+
 	src := new(bytes.Buffer)
 	n, err := src.ReadFrom(r)
 	if err != nil {
 		return errors.Wrap(err, "failed to read from io.Reader")
 	}
 
-	// First 2 bytes is the length of the encrypted DEK
+	// First byte is the length of the encrypted DEK
 	var keyLength uint8
 	if err := binary.Read(src, binary.LittleEndian, &keyLength); err != nil {
 		return errors.Wrap(err, "failed to read length of encrypted DEK")
 	}
 
+	// crypto/cipher.AEAD.Open panics on wrong nonce length.
+	// Validate that the buffer holds encryptedKey + nonce + at least AEAD.Overhead()
+	// bytes remaining after the keyLength byte was consumed.
+	nonceSize := k.aesgcm.NonceSize() // 12 bytes
+	overhead := k.aesgcm.Overhead()   // 16 bytes
+
+	minAfterKey := int64(keyLength) + int64(nonceSize+overhead)
+	remaining := n - 1
+	if remaining < minAfterKey {
+		return errors.New("failed to read ciphertext: minimum length not met")
+	}
+
 	// Next N bytes is the encrypted DEK
 	encryptedKey := src.Next(int(keyLength))
+	if len(encryptedKey) != int(keyLength) {
+		return errors.New("failed to read complete encrypted DEK")
+	}
 
-	// Next 12 bytes is the nonce, followed by the ciphertext
-	nonce := src.Next(12)
-	ciphertext := src.Next(int(n))
+	nonce := src.Next(nonceSize)
+	if len(nonce) != nonceSize {
+		return errors.New("failed to read complete nonce")
+	}
+	ciphertext := src.Next(src.Len())
 
 	// Decrypt using the current DEK
 	if bytes.Equal(encryptedKey, k.encryptedKey) {

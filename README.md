@@ -79,7 +79,7 @@ make terraform/apply
 To run the test suite:
 
 ```
-make go/test
+make go/testsum
 ```
 
 ### Contributing

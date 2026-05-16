@@ -2,6 +2,7 @@ package aesgcm
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,7 +82,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 	t.Run("decrypt error", func(t *testing.T) {
 		a, _ := New(key, nil)
 
-		reader := bytes.NewReader([]byte("invalid ciphertext"))
+		reader := bytes.NewReader([]byte("invalid ciphertext goes here"))
 		writer := new(bytes.Buffer)
 
 		err := a.Decrypt(writer, reader)
@@ -94,7 +95,7 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 
 		a, _ := New(key, previousKey)
 
-		reader := bytes.NewReader([]byte("invalid ciphertext"))
+		reader := bytes.NewReader([]byte("invalid ciphertext goes here"))
 		writer := new(bytes.Buffer)
 
 		err := a.Decrypt(writer, reader)
@@ -111,6 +112,32 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		err := a.Decrypt(writer, reader)
 		require.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
+	})
+
+	t.Run("decrypt single byte does not panic", func(t *testing.T) {
+		a, err := New(key, nil)
+		require.NoError(t, err)
+
+		reader := bytes.NewReader([]byte{0x01})
+		writer := new(bytes.Buffer)
+
+		err = a.Decrypt(writer, reader)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read ciphertext: minimum length not met")
+	})
+
+	t.Run("decrypt twenty seven bytes does not panic", func(t *testing.T) {
+		a, err := New(key, nil)
+		require.NoError(t, err)
+
+		// 12-byte nonce + 15 bytes ciphertext/tag (short of 16-byte GCM tag)
+		buf := make([]byte, 27)
+		reader := bytes.NewReader(buf)
+		writer := new(bytes.Buffer)
+
+		err = a.Decrypt(writer, reader)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read ciphertext: minimum length not met")
 	})
 
 	t.Run("decrypt with previous key", func(t *testing.T) {
@@ -149,5 +176,19 @@ func Test_AESCryptor_Decrypt(t *testing.T) {
 		err := a.Decrypt(writer, reader)
 		require.NoError(t, err)
 		assert.Equal(t, plaintext, writer.String())
+	})
+}
+
+func Test_AESCrypter_EncryptDecrypt_uninitialized(t *testing.T) {
+	t.Run("zero struct", func(t *testing.T) {
+		a := &AESCrypter{}
+
+		err := a.Encrypt(io.Discard, bytes.NewReader([]byte("x")))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "AES-GCM was not initialized")
+
+		err = a.Decrypt(io.Discard, bytes.NewReader(make([]byte, 32)))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "AES-GCM was not initialized")
 	})
 }

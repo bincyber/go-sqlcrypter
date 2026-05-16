@@ -67,6 +67,10 @@ func New(key []byte, previousKey []byte) (sqlcrypter.Crypterer, error) {
 
 // Encrypt encrypts plaintext to ciphertext using the current DEK.
 func (a *AESCrypter) Encrypt(w io.Writer, r io.Reader) error {
+	if a.current == nil {
+		return errors.New("AES-GCM was not initialized")
+	}
+
 	src := new(bytes.Buffer)
 	_, err := src.ReadFrom(r)
 	if err != nil {
@@ -75,12 +79,12 @@ func (a *AESCrypter) Encrypt(w io.Writer, r io.Reader) error {
 
 	nonce, err := sqlcrypter.GenerateBytes(a.current.NonceSize())
 	if err != nil {
-		return errors.Wrap(err, "failed to generate 12-byte random nonce")
+		return errors.Wrap(err, "failed to generate random nonce")
 	}
 
 	ciphertext := a.current.Seal(nil, nonce, src.Bytes(), nil)
 
-	// First 12 bytes will be the nonce, followed by the ciphertext
+	// Nonce first (12 bytes), then ciphertext including AEAD overhead.
 	w.Write(nonce)
 	w.Write(ciphertext)
 
@@ -90,17 +94,35 @@ func (a *AESCrypter) Encrypt(w io.Writer, r io.Reader) error {
 // Decrypt decrypts ciphertext to plaintext. It first attempts to decrypt
 // using the previous DEK if specified, followed by the current DEK.
 func (a *AESCrypter) Decrypt(w io.Writer, r io.Reader) error {
+	if a.current == nil {
+		return errors.New("AES-GCM was not initialized")
+	}
+
 	src := new(bytes.Buffer)
 	n, err := src.ReadFrom(r)
 	if err != nil {
 		return errors.Wrap(err, "failed to read from io.Reader")
 	}
 
-	// First 12 bytes is the nonce, followed by the ciphertext
-	nonce := src.Next(12)
-	ciphertext := src.Next(int(n))
+	// crypto/cipher.AEAD.Open panics if the nonce is not exactly NonceSize()
+	// bytes long (ie, 12). bytes.Buffer.Next returns min(n, available), so guard the
+	// input length before slicing. Minimum well-formed blob is nonce +
+	// ciphertext with at least AEAD.Overhead() (authentication tag) bytes.
+	nonceSize := a.current.NonceSize() // 12 bytes
+	overhead := a.current.Overhead()   // 16 bytes
+	minLen := int64(nonceSize + overhead)
+	if n < minLen {
+		return errors.New("failed to read ciphertext: minimum length not met")
+	}
 
-	// First attempt to decrypt using previous DEK if specified
+	// First 12 bytes is the nonce, followed by the ciphertext
+	nonce := src.Next(nonceSize)
+	if len(nonce) != nonceSize {
+		return errors.New("failed to read nonce")
+	}
+	ciphertext := src.Next(src.Len())
+
+	// First attempt to decrypt using previous DEK if it's set in the provider
 	var attempted bool
 	if a.previous != nil {
 		if plaintext, err := a.previous.Open(nil, nonce, ciphertext, nil); err == nil {
