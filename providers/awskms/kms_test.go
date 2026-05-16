@@ -3,7 +3,10 @@ package awskms
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/binary"
+	"io"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/dgraph-io/ristretto"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/bincyber/go-sqlcrypter"
@@ -103,11 +108,13 @@ func (s *KMSCrypterTestSuite) Test_Encrypt() {
 	r.NoError(err)
 
 	key := writer.Next(int(keyLength))
-	nonce := writer.Next(12)
+	kr := s.kmsCrypter.(*KMSCrypter)
+	ns := kr.aesgcm.NonceSize()
+	nonce := writer.Next(ns)
 	ciphertext := writer.Next(27)
 
 	r.Len(key, 140)
-	r.Len(nonce, 12)
+	r.Len(nonce, ns)
 	r.Len(ciphertext, 27)
 }
 
@@ -160,10 +167,16 @@ func (s *KMSCrypterTestSuite) Test_Decrypt_previous_DEK_cached() {
 	r.True(cache.Set(encryptedKey, key, 1))
 	cache.Wait()
 
+	cipherBlock, err := aes.NewCipher(key)
+	r.NoError(err)
+	aesgcm, err := cipher.NewGCM(cipherBlock)
+	r.NoError(err)
+
 	kmsCrypter := &KMSCrypter{
 		client: s.client,
 		keyID:  KmsKeyAlias,
 		cache:  cache,
+		aesgcm: aesgcm,
 	}
 
 	_, ok := kmsCrypter.cache.Get(encryptedKey)
@@ -176,11 +189,42 @@ func (s *KMSCrypterTestSuite) Test_Decrypt_previous_DEK_cached() {
 	reader := bytes.NewReader(ciphertext)
 	writer := new(bytes.Buffer)
 
-	err := kmsCrypter.Decrypt(writer, reader)
+	err = kmsCrypter.Decrypt(writer, reader)
 	r.NoError(err)
 	r.Equal(plaintext, writer.String())
 }
 
 func Test_KMSCrypterTestSuite(t *testing.T) {
 	suite.Run(t, new(KMSCrypterTestSuite))
+}
+
+// These two tests are deliberately not part of the above test suite.
+func Test_KMSCrypter_Decrypt_ciphertext_too_short(t *testing.T) {
+	key := make([]byte, 32)
+	block, err := aes.NewCipher(key)
+	require.NoError(t, err)
+	gcm, err := cipher.NewGCM(block)
+	require.NoError(t, err)
+	k := &KMSCrypter{aesgcm: gcm}
+
+	buf := new(bytes.Buffer)
+	require.NoError(t, binary.Write(buf, binary.LittleEndian, uint8(40)))
+	buf.Write(make([]byte, 10)) // 11 bytes total: 1 + 10, insufficient for keyLength 40 + nonce + tag
+
+	err = k.Decrypt(io.Discard, bytes.NewReader(buf.Bytes()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read ciphertext: minimum length not met")
+}
+
+func Test_KMSCrypter_Decrypt_SingleByteDoesNotPanic(t *testing.T) {
+	key := make([]byte, 32)
+	block, err := aes.NewCipher(key)
+	require.NoError(t, err)
+	gcm, err := cipher.NewGCM(block)
+	require.NoError(t, err)
+	k := &KMSCrypter{aesgcm: gcm}
+
+	err = k.Decrypt(io.Discard, bytes.NewReader([]byte{0x05}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read ciphertext: minimum length not met")
 }
