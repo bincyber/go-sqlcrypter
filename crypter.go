@@ -21,10 +21,19 @@ type Crypterer interface {
 
 // Init sets the encryption provider used by Encrypt() and Decrypt()
 // and can only ever be called once. Repeated calls have no effect.
-func Init(c Crypterer) {
+//
+// An errors is returned if the Crypter is nil, so that encryption does
+// not get silently disabled for the lifetime of the process.
+func Init(c Crypterer) error {
+	if c == nil {
+		return ErrInitWithNil
+	}
+
 	once.Do(func() {
 		crypter = c
 	})
+
+	return nil
 }
 
 // Encrypt reads plaintext from an io.Reader
