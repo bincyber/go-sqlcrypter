@@ -44,7 +44,10 @@ func main() {
 		logger.Error("failed to create AES GCM crypter")
 	}
 
-	sqlcrypter.Init(aesCrypter)
+	if err := sqlcrypter.Init(aesCrypter); err != nil {
+		logger.Error("failed to create init crypter")
+		os.Exit(1)
+	}
 
 	// Connect to the sqlite database
 	db, err := gorm.Open(sqlite.Open("example.db"), &gorm.Config{})

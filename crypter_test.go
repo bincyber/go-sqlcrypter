@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,9 +58,16 @@ var _ Crypterer = (*base64Crypter)(nil)
 
 func Test_Set(t *testing.T) {
 	c := &base64Crypter{}
-	Init(c)
+	err := Init(c)
+	require.NoError(t, err)
+	require.Equal(t, crypter, c)
+}
 
-	assert.Equal(t, crypter, c)
+func Test_Init_Nil(t *testing.T) {
+	err := Init(nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Init() called with nil crypter")
+	require.ErrorIs(t, err, ErrInitWithNil)
 }
 
 func Test_Encrypt(t *testing.T) {
@@ -75,7 +81,7 @@ func Test_Encrypt(t *testing.T) {
 
 	err := Encrypt(writer, reader)
 	require.NoError(t, err)
-	assert.Equal(t, ciphertext, writer.String())
+	require.Equal(t, ciphertext, writer.String())
 }
 
 func Test_Encrypt_NotInitialized(t *testing.T) {
@@ -91,7 +97,7 @@ func Test_Encrypt_NotInitialized(t *testing.T) {
 
 	err := Encrypt(writer, reader)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrCrypterNotInitialized)
+	require.ErrorIs(t, err, ErrCrypterNotInitialized)
 }
 
 func Test_Decrypt(t *testing.T) {
@@ -105,7 +111,7 @@ func Test_Decrypt(t *testing.T) {
 
 	err := Decrypt(writer, reader)
 	require.NoError(t, err)
-	assert.Equal(t, plaintext, writer.String())
+	require.Equal(t, plaintext, writer.String())
 }
 
 func Test_Decrypt_NotInitialized(t *testing.T) {
@@ -121,5 +127,5 @@ func Test_Decrypt_NotInitialized(t *testing.T) {
 
 	err := Decrypt(writer, reader)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrCrypterNotInitialized)
+	require.ErrorIs(t, err, ErrCrypterNotInitialized)
 }
