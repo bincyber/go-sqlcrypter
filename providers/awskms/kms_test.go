@@ -5,9 +5,13 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha256"
 	"encoding/binary"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -17,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"golang.org/x/time/rate"
 
 	"github.com/bincyber/go-sqlcrypter"
 )
@@ -38,6 +43,17 @@ func getLocalKMSClient() *kms.Client {
 
 	return kms.NewFromConfig(cfg, func(o *kms.Options) {
 		o.BaseEndpoint = aws.String("http://localhost:9090")
+	})
+}
+
+func getTestKMSClient(baseURL string) *kms.Client {
+	cfg, _ := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion("us-west-2"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("AKID", "SECRET_KEY", "TOKEN")),
+	)
+
+	return kms.NewFromConfig(cfg, func(o *kms.Options) {
+		o.BaseEndpoint = aws.String(baseURL)
 	})
 }
 
@@ -227,4 +243,226 @@ func Test_KMSCrypter_Decrypt_SingleByteDoesNotPanic(t *testing.T) {
 	err = k.Decrypt(io.Discard, bytes.NewReader([]byte{0x05}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read ciphertext: minimum length not met")
+}
+
+func Test_New_invalid_request_timeout(t *testing.T) {
+	_, err := New(context.Background(), getLocalKMSClient(), KmsKeyAlias, WithRequestTimeout(0))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "request timeout must be greater than zero")
+}
+
+func Test_New_invalid_KMS_decrypt_rate_limit(t *testing.T) {
+	_, err := New(context.Background(), getLocalKMSClient(), KmsKeyAlias, WithKMSDecryptRateLimit(0, 1))
+	require.Error(t, err)
+	_, err = New(context.Background(), getLocalKMSClient(), KmsKeyAlias, WithKMSDecryptRateLimit(1, 0))
+	require.Error(t, err)
+}
+
+func Test_New_invalid_DEK_cache_config(t *testing.T) {
+	_, err := New(context.Background(), getLocalKMSClient(), KmsKeyAlias, WithDEKCacheConfig(ristretto.Config{
+		NumCounters: 100,
+		MaxCost:     1000,
+		BufferItems: 16,
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NumCounters must be >= MaxCost")
+
+	_, err = New(context.Background(), getLocalKMSClient(), KmsKeyAlias, WithDEKCacheConfig(ristretto.Config{
+		NumCounters: 10_000,
+		MaxCost:     0,
+		BufferItems: 16,
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MaxCost must be greater than zero")
+
+	_, err = New(context.Background(), getLocalKMSClient(), KmsKeyAlias, WithDEKCacheConfig(ristretto.Config{
+		NumCounters: 10_000,
+		MaxCost:     1000,
+		BufferItems: 0,
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "BufferItems must be greater than zero")
+}
+
+func Test_New_request_timeout_applies_to_GenerateDataKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	client := getTestKMSClient(server.URL)
+	_, err := New(context.Background(), client, KmsKeyAlias, WithRequestTimeout(50*time.Millisecond))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to retrieve data key from AWS KMS")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// dekFromEncryptedBlob returns a deterministic 32-byte AES-256 key derived from the
+// KMS ciphertext blob (simulates a unique plaintext DEK per encrypted DEK). Used by
+// fakeDEKStub.Decrypt and by tests that seal payloads for a given blob.
+func dekFromEncryptedBlob(blob []byte) []byte {
+	sum := sha256.Sum256(blob)
+	return append([]byte(nil), sum[:]...)
+}
+
+// fakeDEKStub implements kmsAPI for unit tests. GenerateDataKey returns a fixed current
+// DEK; Decrypt returns a deterministic DEK derived from CiphertextBlob so cache key/value
+// mistakes fail AES-GCM Open instead of masking bugs.
+type fakeDEKStub struct {
+	decryptCalls int
+	dek          []byte
+	currentEnc   []byte
+}
+
+func newFakeDEKStub() *fakeDEKStub {
+	dek := make([]byte, 32)
+	dek[0] = 0x11
+	cur := make([]byte, 140)
+	for i := range cur {
+		cur[i] = byte(i + 1)
+	}
+	return &fakeDEKStub{dek: dek, currentEnc: cur}
+}
+
+func (f *fakeDEKStub) GenerateDataKey(ctx context.Context, in *kms.GenerateDataKeyInput, opt ...func(*kms.Options)) (*kms.GenerateDataKeyOutput, error) {
+	return &kms.GenerateDataKeyOutput{
+		Plaintext:      append([]byte(nil), f.dek...),
+		CiphertextBlob: append([]byte(nil), f.currentEnc...),
+	}, nil
+}
+
+func (f *fakeDEKStub) Decrypt(ctx context.Context, in *kms.DecryptInput, opt ...func(*kms.Options)) (*kms.DecryptOutput, error) {
+	f.decryptCalls++
+	dek := dekFromEncryptedBlob(in.CiphertextBlob)
+	return &kms.DecryptOutput{Plaintext: dek}, nil
+}
+
+// stallKMS implements kmsAPI; Decrypt blocks until the request context ends (for timeout tests).
+type stallKMS struct {
+	dek        []byte
+	currentEnc []byte
+}
+
+func newStallKMS() *stallKMS {
+	dek := make([]byte, 32)
+	dek[0] = 0x22
+	cur := make([]byte, 140)
+	for i := range cur {
+		cur[i] = byte(200 + i)
+	}
+	return &stallKMS{dek: dek, currentEnc: cur}
+}
+
+func (s *stallKMS) GenerateDataKey(ctx context.Context, in *kms.GenerateDataKeyInput, opt ...func(*kms.Options)) (*kms.GenerateDataKeyOutput, error) {
+	return &kms.GenerateDataKeyOutput{
+		Plaintext:      append([]byte(nil), s.dek...),
+		CiphertextBlob: append([]byte(nil), s.currentEnc...),
+	}, nil
+}
+
+func (s *stallKMS) Decrypt(ctx context.Context, in *kms.DecryptInput, opt ...func(*kms.Options)) (*kms.DecryptOutput, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func testRistretto(t *testing.T) *ristretto.Cache {
+	t.Helper()
+	c, err := ristretto.NewCache(&ristretto.Config{
+		NumCounters: 10,
+		MaxCost:     1 << 20,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+	return c
+}
+
+func aesGCMDEKFromBlob(t *testing.T, encryptedDEKBLOB []byte) cipher.AEAD {
+	t.Helper()
+	b, err := aes.NewCipher(dekFromEncryptedBlob(encryptedDEKBLOB))
+	require.NoError(t, err)
+	gcm, err := cipher.NewGCM(b)
+	require.NoError(t, err)
+	return gcm
+}
+
+func wireKMSCiphertext(t *testing.T, encDEK []byte, nonce []byte, plain []byte, aead cipher.AEAD) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	require.NoError(t, binary.Write(&buf, binary.LittleEndian, uint8(len(encDEK)))) //nolint:gosec // test blobs are length 140
+	buf.Write(encDEK)
+	buf.Write(nonce)
+	buf.Write(aead.Seal(nil, nonce, plain, nil))
+	return buf.Bytes()
+}
+
+func Test_Decrypt_KMS_rate_limit_second_miss(t *testing.T) {
+	stub := newFakeDEKStub()
+	block, err := aes.NewCipher(stub.dek)
+	require.NoError(t, err)
+	currentAEAD, err := cipher.NewGCM(block)
+	require.NoError(t, err)
+
+	k := &KMSCrypter{
+		client:             stub,
+		keyID:              KmsKeyAlias,
+		encryptedKey:       append([]byte(nil), stub.currentEnc...),
+		encryptedKeyLength: 140,
+		aesgcm:             currentAEAD,
+		cache:              testRistretto(t),
+		requestTimeout:     time.Second,
+		decryptLimiter:     rate.NewLimiter(rate.Limit(1), 1),
+	}
+
+	nonce1 := make([]byte, 12)
+	nonce1[11] = 1
+	nonce2 := make([]byte, 12)
+	nonce2[11] = 2
+	plain := []byte("hello")
+	alt1 := make([]byte, 140)
+	alt1[0] = 0xEE
+	alt2 := make([]byte, 140)
+	alt2[0] = 0xDD
+
+	gcm1 := aesGCMDEKFromBlob(t, alt1)
+	gcm2 := aesGCMDEKFromBlob(t, alt2)
+
+	b1 := wireKMSCiphertext(t, alt1, nonce1, plain, gcm1)
+	out := new(bytes.Buffer)
+	require.NoError(t, k.Decrypt(out, bytes.NewReader(b1)))
+	assert.Equal(t, plain, out.Bytes())
+	assert.Equal(t, 1, stub.decryptCalls)
+
+	b2 := wireKMSCiphertext(t, alt2, nonce2, plain, gcm2)
+	err = k.Decrypt(new(bytes.Buffer), bytes.NewReader(b2))
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrKMSDecryptRateLimited)
+	assert.Equal(t, 1, stub.decryptCalls, "second decrypt must not call KMS when rate limited")
+}
+
+func Test_Decrypt_KMS_deadline_exceeded(t *testing.T) {
+	stub := newStallKMS()
+	block, err := aes.NewCipher(stub.dek)
+	require.NoError(t, err)
+	aeadgcm, err := cipher.NewGCM(block)
+	require.NoError(t, err)
+
+	k := &KMSCrypter{
+		client:             stub,
+		keyID:              KmsKeyAlias,
+		encryptedKey:       append([]byte(nil), stub.currentEnc...),
+		encryptedKeyLength: 140,
+		aesgcm:             aeadgcm,
+		cache:              testRistretto(t),
+		requestTimeout:     10 * time.Millisecond,
+	}
+
+	nonce := make([]byte, 12)
+	plain := []byte("hello")
+	alt := make([]byte, 140)
+	alt[0] = 0xCC
+	b := wireKMSCiphertext(t, alt, nonce, plain, aeadgcm)
+	err = k.Decrypt(new(bytes.Buffer), bytes.NewReader(b))
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }

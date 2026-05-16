@@ -15,14 +15,89 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/dgraph-io/ristretto"
 	"github.com/pkg/errors"
+	"golang.org/x/time/rate"
 
 	"github.com/bincyber/go-sqlcrypter"
 )
 
+// defaultTimeout is the default timeout used for calls to AWS KMS.
+const defaultTimeout = 2 * time.Second
+
+// defaults for the in-memory DEK cache (see ristretto.Config).
+const (
+	defaultDEKCacheMaxCost     = int64(1 * 1024 * 1024) // 1 MB
+	defaultDEKCacheNumCounters = int64(50_000)
+	defaultDEKCacheBufferItems = int64(64) // 64 is the Ristretto-recommended default
+)
+
+// ErrKMSDecryptRateLimited is returned when optional KMS Decrypt rate limiting
+// rejects a cache-miss decrypt before calling AWS KMS.
+var ErrKMSDecryptRateLimited = errors.New("rate limit exceeded for KMS Decrypt")
+
+// kmsAPI is the subset of AWS KMS client calls used by KMSCrypter (for testing with fakes).
+type kmsAPI interface {
+	GenerateDataKey(context.Context, *kms.GenerateDataKeyInput, ...func(*kms.Options)) (*kms.GenerateDataKeyOutput, error)
+	Decrypt(context.Context, *kms.DecryptInput, ...func(*kms.Options)) (*kms.DecryptOutput, error)
+}
+
+// Option configures a KMSCrypter during New.
+type Option func(*KMSCrypter) error
+
+// WithRequestTimeout sets the per-KMS-call deadline for GenerateDataKey and Decrypt
+// (encrypted DEK path). Values must be greater than zero. The default is 2 second.
+func WithRequestTimeout(timeout time.Duration) Option {
+	return func(k *KMSCrypter) error {
+		if timeout <= 0 {
+			return errors.New("request timeout must be greater than zero")
+		}
+		k.requestTimeout = timeout
+		return nil
+	}
+}
+
+// WithKMSDecryptRateLimit sets a token-bucket limit on KMS Decrypt calls (cache-miss path only).
+// rps and burst must be greater than zero.
+func WithKMSDecryptRateLimit(rps float64, burst int) Option {
+	return func(k *KMSCrypter) error {
+		if rps <= 0 {
+			return errors.New("KMS decrypt rate limit rps must be greater than zero")
+		}
+		if burst <= 0 {
+			return errors.New("KMS decrypt rate limit burst must be greater than zero")
+		}
+		k.decryptLimiter = rate.NewLimiter(rate.Limit(rps), burst)
+		return nil
+	}
+}
+
+// WithDEKCacheConfig sets the Ristretto configuration for the decrypted-DEK cache.
+// NumCounters, MaxCost, and BufferItems must be greater than zero, and NumCounters
+// must be at least MaxCost (see github.com/dgraph-io/ristretto documentation).
+func WithDEKCacheConfig(cfg ristretto.Config) Option {
+	return func(k *KMSCrypter) error {
+		if cfg.NumCounters <= 0 {
+			return errors.New("DEK cache NumCounters must be greater than zero")
+		}
+		if cfg.MaxCost <= 0 {
+			return errors.New("DEK cache MaxCost must be greater than zero")
+		}
+		if cfg.BufferItems <= 0 {
+			return errors.New("DEK cache BufferItems must be greater than zero")
+		}
+		if cfg.NumCounters < cfg.MaxCost {
+			return errors.New("DEK cache NumCounters must be >= MaxCost")
+		}
+		k.cacheCounters = cfg.NumCounters
+		k.cacheMaxCost = cfg.MaxCost
+		k.cacheBufferItems = cfg.BufferItems
+		return nil
+	}
+}
+
 // KMSCrypter is an implementation of the Crypterer interface
 // using AWS KMS with envelope encryption.
 type KMSCrypter struct {
-	client *kms.Client
+	client kmsAPI
 
 	// keyID is the ID, ARN, or Alias for the KMS key.
 	keyID string
@@ -42,12 +117,26 @@ type KMSCrypter struct {
 	// cache stores any previous DEKs that were stored alongside ciphertext
 	// to avoid repetitive client.Decrypt() calls to AWS KMS.
 	cache *ristretto.Cache
+
+	// cacheCounters, cacheMaxCost, and cacheBufferItems map to ristretto.Config (NumCounters, MaxCost, BufferItems).
+	cacheCounters    int64
+	cacheMaxCost     int64
+	cacheBufferItems int64
+
+	// requestTimeout caps each KMS API call (GenerateDataKey, Decrypt on miss).
+	requestTimeout time.Duration
+
+	// decryptLimiter, when non-nil, rate-limits KMS Decrypt on cache miss.
+	decryptLimiter *rate.Limiter
 }
 
 // New creates a new AWS KMS crypter given a KMS client and the ID/Alias/ARN of a KMS key.
 // A new data encryption key (DEK) is obtained from KMS which will be stored alongside the
 // ciphertext. 256-bit AES GCM is used to perform the encryption.
-func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Crypterer, error) {
+//
+// By default each KMS request uses a 2 second deadline. This can be overridden using WithRequestTimeout option.
+// The decrypted-DEK Ristretto cache uses built-in defaults; override with WithDEKCacheConfig.
+func New(ctx context.Context, client *kms.Client, keyID string, opts ...Option) (sqlcrypter.Crypterer, error) {
 	if client == nil {
 		return nil, errors.New("kms.Client cannot be nil")
 	}
@@ -56,13 +145,31 @@ func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Cryp
 		return nil, errors.New("keyID cannot be empty")
 	}
 
+	k := &KMSCrypter{
+		client:           client,
+		keyID:            keyID,
+		requestTimeout:   defaultTimeout,
+		cacheCounters:    defaultDEKCacheNumCounters,
+		cacheMaxCost:     defaultDEKCacheMaxCost,
+		cacheBufferItems: defaultDEKCacheBufferItems,
+	}
+
+	for _, opt := range opts {
+		if err := opt(k); err != nil {
+			return nil, errors.Wrap(err, "failed to apply KMS crypter option")
+		}
+	}
+
 	// Generate a symmetric data encryption key to encrypt new data
 	p := &kms.GenerateDataKeyInput{
 		KeyId:   aws.String(keyID),
 		KeySpec: types.DataKeySpecAes256,
 	}
 
-	resp, err := client.GenerateDataKey(ctx, p)
+	rCtx, cancel := context.WithTimeout(ctx, k.requestTimeout)
+	defer cancel()
+
+	resp, err := k.client.GenerateDataKey(rCtx, p)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to retrieve data key from AWS KMS")
 	}
@@ -79,9 +186,9 @@ func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Cryp
 
 	// Create in-memory cache for previous DEKs
 	cache, err := ristretto.NewCache(&ristretto.Config{
-		NumCounters: 100000000,
-		MaxCost:     10000000, // 10MB
-		BufferItems: 64,
+		NumCounters: k.cacheCounters,
+		MaxCost:     k.cacheMaxCost,
+		BufferItems: k.cacheBufferItems,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to configure in-memory cache")
@@ -92,14 +199,10 @@ func New(ctx context.Context, client *kms.Client, keyID string) (sqlcrypter.Cryp
 		return nil, errors.New("encrypted DEK length exceeds uint8 limit")
 	}
 
-	k := &KMSCrypter{
-		client:             client,
-		keyID:              keyID,
-		aesgcm:             aesgcm,
-		encryptedKey:       resp.CiphertextBlob,
-		encryptedKeyLength: uint8(dekLen),
-		cache:              cache,
-	}
+	k.aesgcm = aesgcm
+	k.encryptedKey = resp.CiphertextBlob
+	k.encryptedKeyLength = uint8(dekLen)
+	k.cache = cache
 
 	return k, nil
 }
@@ -217,6 +320,10 @@ func (k *KMSCrypter) Decrypt(w io.Writer, r io.Reader) error {
 		return nil
 	}
 
+	if k.decryptLimiter != nil && !k.decryptLimiter.Allow() {
+		return ErrKMSDecryptRateLimited
+	}
+
 	// Since the previous DEK doesn't exist in the cache, the DEK needs to be decrypted
 	// using KMS. Then the decrypted key can be used to decrypt the ciphertext.
 	p := &kms.DecryptInput{
@@ -224,7 +331,10 @@ func (k *KMSCrypter) Decrypt(w io.Writer, r io.Reader) error {
 		CiphertextBlob: encryptedKey,
 	}
 
-	resp, err := k.client.Decrypt(context.TODO(), p)
+	rCtx, cancel := context.WithTimeout(context.Background(), k.requestTimeout)
+	defer cancel()
+
+	resp, err := k.client.Decrypt(rCtx, p)
 	if err != nil {
 		return errors.Wrap(err, "failed to decrypt previous DEK using KMS")
 	}
@@ -253,4 +363,7 @@ func (k *KMSCrypter) Decrypt(w io.Writer, r io.Reader) error {
 	return nil
 }
 
-var _ sqlcrypter.Crypterer = (*KMSCrypter)(nil)
+var (
+	_ sqlcrypter.Crypterer = (*KMSCrypter)(nil)
+	_ kmsAPI               = (*kms.Client)(nil)
+)
