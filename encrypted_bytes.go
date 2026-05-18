@@ -6,16 +6,10 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
-)
-
-var (
-	_ driver.Valuer    = &EncryptedBytes{}
-	_ sql.Scanner      = &EncryptedBytes{}
-	_ json.Marshaler   = &EncryptedBytes{}
-	_ json.Unmarshaler = &EncryptedBytes{}
 )
 
 func NewEncryptedBytes(s string) EncryptedBytes {
@@ -50,7 +44,20 @@ func (e *EncryptedBytes) GormDBDataType(db *gorm.DB, field *schema.Field) string
 	}
 }
 
+// String intentionally returns a redacted placeholder to
+// safeguard the plaintext from being inadventerly leaked
+// in logs, stack traces, etc.
+//
+// To deliberately access the plaintext, call Plaintext() or Bytes().
 func (e EncryptedBytes) String() string {
+	return "[REDACTED]"
+}
+
+// Plaintext returns the decrypted contents as a string.
+//
+// It is the caller's responsibility to ensure this value is
+// not logged or otherwise exposed.
+func (e EncryptedBytes) Plaintext() string {
 	return string(e)
 }
 
@@ -59,7 +66,7 @@ func (e EncryptedBytes) Bytes() []byte {
 }
 
 // Scan implements the scanner interface
-func (e *EncryptedBytes) Scan(value interface{}) error {
+func (e *EncryptedBytes) Scan(value any) error {
 	b, ok := value.([]byte)
 	if !ok {
 		return errors.New("failed to read value as bytes")
@@ -122,3 +129,11 @@ func (e *EncryptedBytes) UnmarshalJSON(data []byte) error {
 
 	return e.Scan(b)
 }
+
+var (
+	_ driver.Valuer    = &EncryptedBytes{}
+	_ sql.Scanner      = &EncryptedBytes{}
+	_ json.Marshaler   = &EncryptedBytes{}
+	_ json.Unmarshaler = &EncryptedBytes{}
+	_ fmt.Stringer     = &EncryptedBytes{}
+)

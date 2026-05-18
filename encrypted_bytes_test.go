@@ -2,6 +2,7 @@ package sqlcrypter
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,8 +20,153 @@ func Test_NewEncryptedBytes(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		s := "Hello World"
 		e := NewEncryptedBytes(s)
-		assert.Equal(t, s, e.String())
+		assert.Equal(t, s, e.Plaintext())
 	})
+
+	t.Run("String redacts", func(t *testing.T) {
+		e := NewEncryptedBytes("super secret")
+		assert.Equal(t, "[REDACTED]", e.String())
+	})
+}
+
+func Test_EncryptedBytes_String(t *testing.T) {
+	secret := "do-not-leak-this-credential"
+	e := NewEncryptedBytes(secret)
+
+	out := fmt.Sprint(e)
+	assert.NotContains(t, out, secret, "formatted output must not contain plaintext")
+	assert.Equal(t, "[REDACTED]", out)
+}
+
+func Test_EncryptedBytes_Plaintext(t *testing.T) {
+	tests := []struct {
+		name   string
+		value  func() EncryptedBytes
+		want   string
+		nilBuf bool
+	}{
+		{
+			name:   "empty",
+			value:  func() EncryptedBytes { return NewEncryptedBytes("") },
+			want:   "",
+			nilBuf: true,
+		},
+		{
+			name:  "non_empty",
+			value: func() EncryptedBytes { return NewEncryptedBytes("Hello World") },
+			want:  "Hello World",
+		},
+		{
+			name:  "unicode",
+			value: func() EncryptedBytes { return NewEncryptedBytes("你好世界") },
+			want:  "你好世界",
+		},
+		{
+			name: "nil_slice",
+			value: func() EncryptedBytes {
+				var e EncryptedBytes
+				return e
+			},
+			want:   "",
+			nilBuf: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := tt.value()
+			assert.Equal(t, tt.want, e.Plaintext())
+			if tt.nilBuf {
+				assert.Nil(t, []byte(e))
+			}
+		})
+	}
+}
+
+func Test_EncryptedBytes_Bytes(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       func() EncryptedBytes
+		want        []byte
+		nilBuf      bool
+		mutateFirst bool // mutating returned slice updates backing EncryptedBytes
+		afterMutate string
+	}{
+		{
+			name:   "empty",
+			value:  func() EncryptedBytes { return NewEncryptedBytes("") },
+			want:   nil,
+			nilBuf: true,
+		},
+		{
+			name:        "non_empty",
+			value:       func() EncryptedBytes { return NewEncryptedBytes("Hello World") },
+			want:        []byte("Hello World"),
+			mutateFirst: true,
+			afterMutate: "Jello World",
+		},
+		{
+			name:  "unicode",
+			value: func() EncryptedBytes { return NewEncryptedBytes("你好世界") },
+			want:  []byte("你好世界"),
+		},
+		{
+			name: "nil_slice",
+			value: func() EncryptedBytes {
+				var e EncryptedBytes
+				return e
+			},
+			want:   nil,
+			nilBuf: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := tt.value()
+			got := e.Bytes()
+			assert.Equal(t, tt.want, got)
+			if tt.nilBuf {
+				assert.Nil(t, got)
+			}
+			if tt.mutateFirst {
+				require.NotEmpty(t, got)
+				got[0] = 'J'
+				assert.Equal(t, tt.afterMutate, e.Plaintext())
+			}
+		})
+	}
+}
+
+func Test_EncryptedBytes_GormDataType(t *testing.T) {
+	tests := []struct {
+		name  string
+		value func() EncryptedBytes
+	}{
+		{
+			name:  "with_plaintext",
+			value: func() EncryptedBytes { return NewEncryptedBytes("secret") },
+		},
+		{
+			name:  "empty_constructor",
+			value: func() EncryptedBytes { return NewEncryptedBytes("") },
+		},
+		{
+			name: "nil_slice",
+			value: func() EncryptedBytes {
+				var e EncryptedBytes
+				return e
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := tt.value()
+			p := &e
+			assert.Equal(t, "encryptedbytes", p.GormDataType())
+		})
+	}
 }
 
 func Test_EncryptedBytes_Scan(t *testing.T) {
@@ -45,7 +191,7 @@ func Test_EncryptedBytes_Scan(t *testing.T) {
 		e := &EncryptedBytes{}
 		err := e.Scan([]byte("SGVsbG8gV29ybGQ="))
 		require.NoError(t, err)
-		assert.Equal(t, "Hello World", e.String())
+		assert.Equal(t, "Hello World", e.Plaintext())
 	})
 }
 
@@ -96,5 +242,5 @@ func Test_EncryptedBytes_UnmarshalJSON(t *testing.T) {
 
 	err := json.Unmarshal(data, &e)
 	require.NoError(t, err)
-	assert.Equal(t, "Hello World", e.Secret.String())
+	assert.Equal(t, "Hello World", e.Secret.Plaintext())
 }
