@@ -65,6 +65,29 @@ func main() {
 
 For a full example, see [example/main.go](https://github.com/bincyber/go-sqlcrypter/blob/master/example/main.go).
 
+#### Nullable columns: `NullEncryptedBytes`
+
+Use [`NullEncryptedBytes`](https://github.com/bincyber/go-sqlcrypter/blob/master/null_encrypted_bytes.go) when a column may be **SQL `NULL`**, and you need to tell **`NULL`** apart from an empty string stored as ciphertext:
+
+| State | `Valid` | Plaintext | Stored value |
+|-------|---------|-----------|--------------|
+| Absent | `false` | _(n/a)_ | SQL `NULL` |
+| Present, empty | `true` | `""` | Non-`NULL` BYTEA / blob (encrypted empty) |
+| Present | `true` | non-empty | Non-`NULL` BYTEA / blob |
+
+By contrast, [`EncryptedBytes`](https://github.com/bincyber/go-sqlcrypter/blob/master/encrypted_bytes.go) maps **empty plaintext to `NULL`** on write (`driver.Valuer`), which cannot represent _“empty but not null.”_
+
+Constructors:
+
+```go
+present := sqlcrypter.NewNullEncryptedBytes("secret")     // Valid=true; empty string allowed
+absent  := sqlcrypter.NullEncryptedBytesNull()            // Valid=false => SQL NULL
+```
+
+- **sqlc / pgx (Postgres `BYTEA`):** put `sqlcrypter.NullEncryptedBytes` on the generated struct field. The type implements [`pgtype.BytesScanner`](https://pkg.go.dev/github.com/jackc/pgx/v5/pgtype#BytesScanner) and [`pgtype.BytesValuer`](https://pkg.go.dev/github.com/jackc/pgx/v5/pgtype#BytesValuer). The default `BYTEA` codec picks these up, therefore no manual `pgtype.Map` registration is required.
+- **JSON:** absent values marshal as JSON `null` while present values marshal as base64-encoded ciphertext (including when plaintext is empty).
+- **GORM:** `GormDataType()` is `nullencryptedbytes` and `GormDBDataType` follows the same dialect mapping as `EncryptedBytes` (`bytea` / `binary` / `blob` / `varbinary`).
+
 ### Development
 
 [Docker Compose](https://docs.docker.com/compose/) backs local services; `make dev/up` and related targets invoke it against [testing/docker-compose.yml](https://github.com/bincyber/go-sqlcrypter/blob/master/testing/docker-compose.yml).

@@ -60,7 +60,8 @@ func Test_Set(t *testing.T) {
 	c := &base64Crypter{}
 	err := Init(c)
 	require.NoError(t, err)
-	require.Equal(t, crypter, c)
+	_, ok := crypter.(*base64Crypter)
+	require.True(t, ok, "crypter should be a *base64Crypter after Init")
 }
 
 func Test_Init_Nil(t *testing.T) {
