@@ -18,7 +18,7 @@ Refer to each provider for documentation and examples.
 ### Install
 
 ```
-go get -u github.com/bincyber/go-sqlcrypter@v0.2.0
+go get -u github.com/bincyber/go-sqlcrypter@v0.3.0
 ```
 
 ### Usage
