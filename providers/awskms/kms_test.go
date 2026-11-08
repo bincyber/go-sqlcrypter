@@ -427,13 +427,13 @@ func Test_Decrypt_KMS_rate_limit_second_miss(t *testing.T) {
 	gcm1 := aesGCMDEKFromBlob(t, alt1)
 	gcm2 := aesGCMDEKFromBlob(t, alt2)
 
-	b1 := wireKMSCiphertext(t, alt1, nonce1, plain, gcm1)
+	b1 := wireKMSCiphertext(t, alt1, nonce1, plain, gcm1) //nolint:gosec // G407: fixed test nonce
 	out := new(bytes.Buffer)
 	require.NoError(t, k.Decrypt(out, bytes.NewReader(b1)))
 	assert.Equal(t, plain, out.Bytes())
 	assert.Equal(t, 1, stub.decryptCalls)
 
-	b2 := wireKMSCiphertext(t, alt2, nonce2, plain, gcm2)
+	b2 := wireKMSCiphertext(t, alt2, nonce2, plain, gcm2) //nolint:gosec // G407: fixed test nonce
 	err = k.Decrypt(new(bytes.Buffer), bytes.NewReader(b2))
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrKMSDecryptRateLimited)
@@ -461,7 +461,7 @@ func Test_Decrypt_KMS_deadline_exceeded(t *testing.T) {
 	plain := []byte("hello")
 	alt := make([]byte, 140)
 	alt[0] = 0xCC
-	b := wireKMSCiphertext(t, alt, nonce, plain, aeadgcm)
+	b := wireKMSCiphertext(t, alt, nonce, plain, aeadgcm) //nolint:gosec // G407: fixed test nonce
 	err = k.Decrypt(new(bytes.Buffer), bytes.NewReader(b))
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
