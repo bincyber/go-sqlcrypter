@@ -56,9 +56,7 @@ jobs:
         run: go mod download
 
       - name: Setup gotestsum
-        uses: autero1/action-gotestsum@cb990680d22124dd5927ab91fe977567f5826722 # v2.0.0
-        with:
-          gotestsum_version: 1.13.0
+        run: go install gotest.tools/gotestsum@v1.13.0
 
       - name: Run tests
         run: make go/testsum
