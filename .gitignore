@@ -3,3 +3,4 @@
 **/.terraform
 example/example.db
 .coverage.out
+example/example
