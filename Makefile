@@ -1,4 +1,4 @@
-.PHONY: go/install go/tidy go/test go/testsum go/lint go/coverage go/vulncheck
+.PHONY: go/install go/tidy go/test go/testsum go/test-fips go/test-boring go/lint go/coverage go/vulncheck
 .PHONY: generate/key generate/changelog
 .PHONY: dev/up dev/down dev/logs
 .PHONY: terraform/apply terraform/destroy
@@ -14,6 +14,14 @@ go/test:
 
 go/testsum:
 	gotestsum --format testname --no-color=false -- --cover ./...
+
+# aesgcm must work while the Go Cryptographic Module enforces approved-only operation.
+go/test-fips:
+	GODEBUG=fips140=only gotestsum --format testname --no-color=false -- -count=1 ./providers/aesgcm/...
+
+# aesgcm falls back to cipher.NewGCM when the AES block is not the standard library's.
+go/test-boring:
+	GOEXPERIMENT=boringcrypto gotestsum --format testname --no-color=false -- -count=1 ./providers/aesgcm/...
 
 go/lint:
 	golangci-lint run --allow-parallel-runners

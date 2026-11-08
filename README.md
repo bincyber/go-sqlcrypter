@@ -13,12 +13,12 @@ The following encryption providers are supported:
 * [AWS KMS](https://github.com/bincyber/go-sqlcrypter/blob/master/providers/awskms/README.md)
 * [HashiCorp Vault](https://github.com/bincyber/go-sqlcrypter/blob/master/providers/vault/README.md)
 
-Refer to each provider for documentation and examples.
+Refer to each provider for documentation and examples. Only the AES GCM provider works when the Go Cryptographic Module enforces approved-only operation (`GODEBUG=fips140=only`); the AWS KMS provider still builds AES-GCM with caller-supplied nonces.
 
 ### Install
 
 ```
-go get -u github.com/bincyber/go-sqlcrypter@v0.3.0
+go get -u github.com/bincyber/go-sqlcrypter@v0.4.0
 ```
 
 ### Usage
@@ -30,7 +30,7 @@ Configure the encryption provider of your choice:
 
 ```go
 key := []byte("abcdef01234567899876543210fedcba")
-provider, err := aescrypter.New(key, nil)
+provider, err := aesgcm.New(key, nil)
 if err != nil {
     log.Fatalf("failed to initialize AES crypter. Error: %s", err)
 }
